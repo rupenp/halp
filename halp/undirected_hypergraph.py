@@ -274,12 +274,28 @@ class UndirectedHypergraph(object):
         # Loop over every hyperedge in the star of the node;
         # i.e., over every hyperedge that contains the node
         for hyperedge_id in self._star[node]:
+
             frozen_nodes = \
                 self._hyperedge_attributes[hyperedge_id]["__frozen_nodes"]
-            # Remove the node set composing the hyperedge
+            # Remove the old node set composing the hyperedge
             del self._node_set_to_hyperedge[frozen_nodes]
-            # Remove this hyperedge's attributes
-            del self._hyperedge_attributes[hyperedge_id]
+
+            nodes = \
+                self._hyperedge_attributes[hyperedge_id]["nodes"]
+            nodes.remove(node)
+            # If hyperedge still contains nodes update,
+            # else remove hyperedge all together
+            if nodes:
+                frozen_nodes = frozenset(nodes)
+                self._node_set_to_hyperedge[frozen_nodes] = hyperedge_id
+                self._hyperedge_attributes[hyperedge_id].update({
+                    "nodes": nodes,
+                    "__frozen_nodes": frozen_nodes
+                    })
+
+            else:
+                # Remove this hyperedge's attributes
+                del self._hyperedge_attributes[hyperedge_id]
 
         # Remove node's star
         del self._star[node]

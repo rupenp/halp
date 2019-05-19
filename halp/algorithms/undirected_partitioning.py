@@ -5,12 +5,30 @@
             an undirected hypergraph.
 """
 import numpy as np
+import warnings
 from scipy import sparse
 from scipy.sparse import linalg
 import random
 
 from halp.undirected_hypergraph import UndirectedHypergraph
 from halp.utilities import undirected_matrices as umat
+from halp.utilities import undirected_components as ucomp
+
+
+def spectral_hypergraph_embedding(H, n_components, drop_first=True):
+     # Whether to discard the first eigenvector
+    if drop_first:
+        n_components = n_components + 1
+    eigenvalues, eigenvectors = _compute_eigens(H)
+
+    min_sorted_eigs = np.argsort(eigenvalues)
+
+    if drop_first:
+        embedding = eigenvectors[:,min_sorted_eigs[1:n_components]]    
+    else:
+        embedding = eigenvectors[:,min_sorted_eigs[:n_components]]    
+
+    return embeddings.real 
 
 
 def normalized_hypergraph_cut(H, threshold=0):
@@ -20,8 +38,10 @@ def normalized_hypergraph_cut(H, threshold=0):
     Advances in neural information processing systems. 2006.
     (http://machinelearning.wustl.edu/mlpapers/paper_files/NIPS2006_630.pdf)
 
-    This algorithm uses the normalized Laplacian to partition the hypergraph
-    into two disjoint components.
+    This algorithm uses the normalized Laplacian to first calcualte
+    eigenvalues and eigenvectors. Then sorts eigenvalues and takes 
+    the eigenvector corresponding to second smallest eigenvalue
+    to partition the hypergraph into two disjoint components.
 
     :param H: the hypergraph to perform the hypergraph-cut algorithm on.
     :param threshold: The threshold value for the partitioning algorithm.
@@ -31,10 +51,48 @@ def normalized_hypergraph_cut(H, threshold=0):
     :raises: TypeError -- Algorithm only applicable to undirected hypergraphs
 
     """
+
+    eigenvalues, eigenvectors = _compute_eigens(H)
+
+    second_min_index = np.argsort(eigenvalues)[1]
+    second_eigenvector = eigenvectors[:, second_min_index]
+    partition_index = [i for i in range(len(second_eigenvector))
+                       if second_eigenvector[i] >= threshold]
+
+    S, T = set(), set()
+    for key, value in nodes_to_indices.items():
+        if value in partition_index:
+            S.add(key)
+        else:
+            T.add(key)
+
+    return S, T
+
+def _compute_eigens(H):
+    """Computes the eigen values and vectors as described in the paper:
+    Zhou, Dengyong, Jiayuan Huang, and Bernhard Scholkopf.
+    "Learning with hypergraphs: Clustering, classification, and embedding."
+    Advances in neural information processing systems. 2006.
+    (http://machinelearning.wustl.edu/mlpapers/paper_files/NIPS2006_630.pdf)
+
+    This algorithm uses the normalized Laplacian to compute eigenvalues.
+
+    :param H: the hypergraph to compute eigenvalues and eigenvectos on.
+    :returns: array -- (..., N) of eigenvalues (these are not necessarily
+              ordered).
+              array -- (..., N, N) of eigenvectors, such that the 
+                       column ``eigenvectors[:,i]`` is the eigenvector corresponding to the
+                       eigenvalue ``eigenvalues[i]`
+    :raises: TypeError -- Algorithm only applicable to undirected hypergraphs
+    :warn: Algorithm may give unpredictable if hypergraph contains more than one
+           connected components
+    """
     if not isinstance(H, UndirectedHypergraph):
         raise TypeError("Algorithm only applicable to undirected hypergraphs")
 
-    # TODO: make sure that the hypergraph is connected
+    if len(ucomp.connected_components(H)) > 1):
+        warnings.warn("Algrithm may give unpredictable results for \
+                input Hypergraph containing more than one components")
 
     # Get index<->node mappings and index<->hyperedge_id mappings for matrices
     indices_to_nodes, nodes_to_indices = \
@@ -58,19 +116,7 @@ def normalized_hypergraph_cut(H, threshold=0):
     # eigenvalues,eigenvectors = linalg.eigs(delta,k=numberOfEigenValues)
     eigenvalues, eigenvectors = np.linalg.eig(delta.todense())
 
-    second_min_index = np.argsort(eigenvalues)[1]
-    second_eigenvector = eigenvectors[:, second_min_index]
-    partition_index = [i for i in range(len(second_eigenvector))
-                       if second_eigenvector[i] >= threshold]
-
-    S, T = set(), set()
-    for key, value in nodes_to_indices.items():
-        if value in partition_index:
-            S.add(key)
-        else:
-            T.add(key)
-
-    return S, T
+    return eigenvalues, eigenvectors
 
 
 def _compute_normalized_laplacian(H,
